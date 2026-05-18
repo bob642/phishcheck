@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PhishCheck - AI Phishing Email Analyzer</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 2rem 1rem;
+      background: #f7f8fa;
+      color: #1a1a1a;
+      line-height: 1.5;
+    }
+    h1 { margin-bottom: 0.25rem; color: #1f3a5f; }
+    .subtitle { color: #666; margin-top: 0; margin-bottom: 2rem; }
+    .card {
+      background: white;
+      border-radius: 8px;
+      padding: 1.5rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      margin-bottom: 1.5rem;
+    }
+    label { display: block; font-weight: 600; margin-top: 1rem; margin-bottom: 0.25rem; }
+    input, textarea {
+      width: 100%;
+      padding: 0.6rem;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 0.95rem;
+    }
+    textarea { min-height: 180px; resize: vertical; }
+    button {
+      margin-top: 1.25rem;
+      padding: 0.7rem 1.5rem;
+      background: #1f3a5f;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { background: #2a4d7a; }
+    button:disabled { background: #999; cursor: not-allowed; }
+    .results { display: none; }
+    .risk-banner {
+      padding: 1rem;
+      border-radius: 6px;
+      font-weight: 600;
+      margin-bottom: 1rem;
+    }
+    .risk-LOW { background: #d4edda; color: #155724; }
+    .risk-MEDIUM { background: #fff3cd; color: #856404; }
+    .risk-HIGH { background: #f8d7da; color: #721c24; }
+    .risk-CRITICAL { background: #721c24; color: white; }
+    .flag {
+      border-left: 4px solid #999;
+      padding: 0.6rem 0.9rem;
+      margin-bottom: 0.6rem;
+      background: #fafafa;
+      border-radius: 0 4px 4px 0;
+    }
+    .flag.severity-HIGH { border-left-color: #c9302c; }
+    .flag.severity-MEDIUM { border-left-color: #ec971f; }
+    .flag.severity-LOW { border-left-color: #5bc0de; }
+    .flag-category { font-weight: 600; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; }
+    .flag-evidence { font-size: 0.9rem; color: #444; margin-top: 0.25rem; }
+    .error { background: #f8d7da; color: #721c24; padding: 1rem; border-radius: 6px; }
+    .loading { color: #666; font-style: italic; }
+  </style>
+</head>
+<body>
+  <h1>🎣 PhishCheck</h1>
+  <p class="subtitle">Paste a suspicious email and let AI tell you if it's a threat.</p>
+
+  <div class="card">
+    <label for="sender">From (sender email)</label>
+    <input id="sender" type="text" placeholder="e.g., support@suspicious-site.com">
+
+    <label for="subject">Subject</label>
+    <input id="subject" type="text" placeholder="e.g., URGENT: Verify your account">
+
+    <label for="body">Email body</label>
+    <textarea id="body" placeholder="Paste the full email body here..."></textarea>
+
+    <button id="analyzeBtn" onclick="analyze()">Analyze Email</button>
+  </div>
+
+  <div id="results" class="card results"></div>
+
+  <script>
+    async function analyze() {
+      const sender = document.getElementById("sender").value;
+      const subject = document.getElementById("subject").value;
+      const body = document.getElementById("body").value;
+      const btn = document.getElementById("analyzeBtn");
+      const resultsDiv = document.getElementById("results");
+
+      if (!sender || !subject || !body) {
+        alert("Please fill in all three fields.");
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = "Analyzing...";
+      resultsDiv.style.display = "block";
+      resultsDiv.innerHTML = '<p class="loading">Sending to Claude for analysis...</p>';
+
+      try {
+        const response = await fetch("/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sender, subject, body })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          resultsDiv.innerHTML = `<div class="error">${data.error || "Something went wrong."}</div>`;
+          return;
+        }
+
+        renderResults(data);
+      } catch (err) {
+        resultsDiv.innerHTML = `<div class="error">Network error: ${err.message}</div>`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Analyze Email";
+      }
+    }
+
+    function renderResults(data) {
+      const resultsDiv = document.getElementById("results");
+
+      let flagsHtml = "";
+      if (data.red_flags && data.red_flags.length > 0) {
+        flagsHtml = "<h3>Red flags detected</h3>";
+        for (const flag of data.red_flags) {
+          flagsHtml += `
+            <div class="flag severity-${flag.severity}">
+              <div class="flag-category">[${flag.severity}] ${flag.category.replace(/_/g, " ")}</div>
+              <div class="flag-evidence">${flag.evidence}</div>
+            </div>`;
+        }
+      } else {
+        flagsHtml = "<p>No red flags detected.</p>";
+      }
+
+      resultsDiv.innerHTML = `
+        <div class="risk-banner risk-${data.risk_level}">
+          Risk: ${data.risk_level} (confidence: ${data.confidence})<br>
+          Recommended action: ${data.recommended_action.replace(/_/g, " ")}
+        </div>
+        <p><strong>Summary:</strong> ${data.explanation}</p>
+        ${flagsHtml}
+      `;
+    }
+  </script>
+</body>
+</html>
